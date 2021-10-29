@@ -8,7 +8,7 @@ const _changeEvent = { type: 'change' };
 
 class FlyControls extends EventDispatcher {
 
-	constructor( object, domElement ) {
+	constructor( object, domElement, state ) {
 
 		super();
 
@@ -142,6 +142,8 @@ class FlyControls extends EventDispatcher {
 
 		this.mousemove = function ( event ) {
 
+			if(!state.controls.enabled) return
+
 			if ( ! this.dragToLook || this.mouseStatus > 0 ) {
 
 				const container = this.getContainerDimensions();
@@ -272,6 +274,9 @@ class FlyControls extends EventDispatcher {
 		this.domElement.addEventListener( 'mousemove', _mousemove );
 		this.domElement.addEventListener( 'mousedown', _mousedown );
 		this.domElement.addEventListener( 'mouseup', _mouseup );
+
+		this.domElement.addEventListener( 'mouseleave', () =>{
+			this.mouseStatus = 0 }, false );
 
 		window.addEventListener( 'keydown', _keydown );
 		window.addEventListener( 'keyup', _keyup );
