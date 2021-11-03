@@ -21,6 +21,7 @@ import ModelViewProjectionNode from '../../nodes/accessors/ModelViewProjectionNo
 import SkinningNode from '../../nodes/accessors/SkinningNode.js';
 import LightContextNode from '../../nodes/lights/LightContextNode.js';
 import OperatorNode from '../../nodes/math/OperatorNode.js';
+import WGSLNodeParser from '../../nodes/parsers/WGSLNodeParser.js';
 
 const wgslTypeLib = {
 	float: 'f32',
@@ -68,7 +69,7 @@ class WebGPUNodeBuilder extends NodeBuilder {
 
 	constructor( object, renderer, lightNode = null ) {
 
-		super( object, renderer );
+		super( object, renderer, new WGSLNodeParser() );
 
 		this.lightNode = lightNode;
 
@@ -214,7 +215,7 @@ class WebGPUNodeBuilder extends NodeBuilder {
 
 				// SPECULAR_TINT
 
-				this.addFlow( 'fragment', new VarNode( new ExpressionNode( 'mix( vec3<f32>( 0.04 ), DiffuseColor.rgb, Metalness )', 'vec3' ), 'SpecularTint', 'color' ) );
+				this.addFlow( 'fragment', new VarNode( new ExpressionNode( 'mix( vec3<f32>( 0.04 ), DiffuseColor.rgb, Metalness )', 'vec3' ), 'SpecularColor', 'color' ) );
 
 				// NORMAL_VIEW
 
