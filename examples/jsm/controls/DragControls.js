@@ -165,6 +165,10 @@ class DragControls extends EventDispatcher {
 				scope.dispatchEvent( { type: 'dragstart', object: _selected } );
 
 			}
+			else {
+				// handle panX ...
+
+			}
 
 
 		}

@@ -1,3 +1,4 @@
+import { moveToVerticalNode } from '../../../../src/lib/camera-position.js';
 import {
 	EventDispatcher,
 	Quaternion,
@@ -8,7 +9,7 @@ const _changeEvent = { type: 'change' };
 
 class FlyControls extends EventDispatcher {
 
-	constructor( object, domElement, state ) {
+	constructor( object, domElement, state, cameraPosition ) {
 
 		super();
 
@@ -71,8 +72,11 @@ class FlyControls extends EventDispatcher {
 				case 'KeyR': this.moveState.up = 1; break;
 				case 'KeyF': this.moveState.down = 1; break;
 
-				case 'ArrowUp': this.moveState.pitchUp = 1; break;
-				case 'ArrowDown': this.moveState.pitchDown = 1; break;
+				// case 'ArrowUp': this.moveState.pitchUp = 1; break;
+				// case 'ArrowDown': this.moveState.pitchDown = 1; break;	
+
+				case 'ArrowUp': moveToNode(state, "forward"); break;
+				case 'ArrowDown': moveToNode(state, "back"); break;
 
 				case 'ArrowLeft': this.moveState.yawLeft = 1; break;
 				case 'ArrowRight': this.moveState.yawRight = 1; break;
