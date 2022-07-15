@@ -1,4 +1,5 @@
-import { moveToNodeDirectionally, moveToVerticalNode } from '../../../../src/lib/camera-position.js';
+import moveToNodeDirectionally/* , moveToVerticalNode */ from '../../../../src/lib/camera-position.js';
+import cameraPosition from '../../../../src/lib/camera-position.js';
 import {
 	EventDispatcher,
 	Quaternion,
