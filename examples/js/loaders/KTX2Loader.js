@@ -5,15 +5,31 @@
  *
  * KTX 2.0 is a container format for various GPU texture formats. The loader
  * supports Basis Universal GPU textures, which can be quickly transcoded to
- * a wide variety of GPU texture compression formats. While KTX 2.0 also allows
- * other hardware-specific formats, this loader does not yet parse them.
+ * a wide variety of GPU texture compression formats, as well as some
+ * uncompressed THREE.DataTexture and THREE.Data3DTexture formats.
  *
  * References:
  * - KTX: http://github.khronos.org/KTX-Specification/
  * - DFD: https://www.khronos.org/registry/DataFormat/specs/1.3/dataformat.1.3.html#basicdescriptor
  */
-	const KTX2TransferSRGB = 2;
-	const KTX2_ALPHA_PREMULTIPLIED = 1;
+	const {
+		read,
+		KHR_DF_FLAG_ALPHA_PREMULTIPLIED,
+		KHR_DF_TRANSFER_SRGB,
+		VK_FORMAT_UNDEFINED,
+		VK_FORMAT_R16_SFLOAT,
+		VK_FORMAT_R16G16_SFLOAT,
+		VK_FORMAT_R16G16B16A16_SFLOAT,
+		VK_FORMAT_R32_SFLOAT,
+		VK_FORMAT_R32G32_SFLOAT,
+		VK_FORMAT_R32G32B32A32_SFLOAT,
+		VK_FORMAT_R8_SRGB,
+		VK_FORMAT_R8_UNORM,
+		VK_FORMAT_R8G8_SRGB,
+		VK_FORMAT_R8G8_UNORM,
+		VK_FORMAT_R8G8B8A8_SRGB,
+		VK_FORMAT_R8G8B8A8_UNORM
+	} = KTX; // eslint-disable-line no-undef
 
 	const _taskCache = new WeakMap();
 
@@ -63,14 +79,14 @@
 				bptcSupported: renderer.extensions.has( 'EXT_texture_compression_bptc' ),
 				pvrtcSupported: renderer.extensions.has( 'WEBGL_compressed_texture_pvrtc' ) || renderer.extensions.has( 'WEBKIT_WEBGL_compressed_texture_pvrtc' )
 			};
-			return this;
 
-		}
+			if ( renderer.capabilities.isWebGL2 ) {
 
-		dispose() {
+				// https://github.com/mrdoob/three.js/pull/22928
+				this.workerConfig.etc1Supported = false;
 
-			this.workerPool.dispose();
-			if ( this.workerSourceURL ) URL.revokeObjectURL( this.workerSourceURL );
+			}
+
 			return this;
 
 		}
@@ -137,7 +153,6 @@
 			const loader = new THREE.FileLoader( this.manager );
 			loader.setResponseType( 'arraybuffer' );
 			loader.setWithCredentials( this.withCredentials );
-			const texture = new THREE.CompressedTexture();
 			loader.load( url, buffer => {
 
 				// Check for an existing task using this buffer. A transferred buffer cannot be transferred
@@ -150,16 +165,9 @@
 
 				}
 
-				this._createTexture( [ buffer ] ).then( function ( _texture ) {
-
-					texture.copy( _texture );
-					texture.needsUpdate = true;
-					if ( onLoad ) onLoad( texture );
-
-				} ).catch( onError );
+				this._createTexture( buffer ).then( texture => onLoad ? onLoad( texture ) : null ).catch( onError );
 
 			}, onProgress, onError );
-			return texture;
 
 		}
 
@@ -181,32 +189,41 @@
 			texture.magFilter = THREE.LinearFilter;
 			texture.generateMipmaps = false;
 			texture.needsUpdate = true;
-			texture.encoding = dfdTransferFn === KTX2TransferSRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
-			texture.premultiplyAlpha = !! ( dfdFlags & KTX2_ALPHA_PREMULTIPLIED );
+			texture.encoding = dfdTransferFn === KHR_DF_TRANSFER_SRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
+			texture.premultiplyAlpha = !! ( dfdFlags & KHR_DF_FLAG_ALPHA_PREMULTIPLIED );
 			return texture;
 
 		}
 		/**
-   * @param {ArrayBuffer[]} buffers
+   * @param {ArrayBuffer} buffer
    * @param {object?} config
-   * @return {Promise<CompressedTexture>}
+   * @return {Promise<CompressedTexture|DataTexture|Data3DTexture>}
    */
 
 
-		_createTexture( buffers, config = {} ) {
+		_createTexture( buffer, config = {} ) {
+
+			const container = read( new Uint8Array( buffer ) );
+
+			if ( container.vkFormat !== VK_FORMAT_UNDEFINED ) {
+
+				return createDataTexture( container );
+
+			} //
+
 
 			const taskConfig = config;
 			const texturePending = this.init().then( () => {
 
 				return this.workerPool.postMessage( {
 					type: 'transcode',
-					buffers,
+					buffer,
 					taskConfig: taskConfig
-				}, buffers );
+				}, [ buffer ] );
 
 			} ).then( e => this._createTextureFrom( e.data ) ); // Cache the task result.
 
-			_taskCache.set( buffers[ 0 ], {
+			_taskCache.set( buffer, {
 				promise: texturePending
 			} );
 
@@ -216,8 +233,8 @@
 
 		dispose() {
 
-			URL.revokeObjectURL( this.workerSourceURL );
 			this.workerPool.dispose();
+			if ( this.workerSourceURL ) URL.revokeObjectURL( this.workerSourceURL );
 			_activeLoaders --;
 			return this;
 
@@ -299,7 +316,7 @@
 								format,
 								dfdTransferFn,
 								dfdFlags
-							} = transcode( message.buffers[ 0 ] );
+							} = transcode( message.buffer );
 							const buffers = [];
 
 							for ( let i = 0; i < mipmaps.length; ++ i ) {
@@ -487,8 +504,8 @@
 		}, {
 			if: 'etc1Supported',
 			basisFormat: [ BasisFormat.ETC1S, BasisFormat.UASTC_4x4 ],
-			transcoderFormat: [ TranscoderFormat.ETC1, TranscoderFormat.ETC1 ],
-			engineFormat: [ EngineFormat.RGB_ETC1_Format, EngineFormat.RGB_ETC1_Format ],
+			transcoderFormat: [ TranscoderFormat.ETC1 ],
+			engineFormat: [ EngineFormat.RGB_ETC1_Format ],
 			priorityETC1S: 2,
 			priorityUASTC: 4,
 			needsPowerOfTwo: false
@@ -523,6 +540,7 @@
 				const opt = options[ i ];
 				if ( ! config[ opt.if ] ) continue;
 				if ( ! opt.basisFormat.includes( basisFormat ) ) continue;
+				if ( hasAlpha && opt.transcoderFormat.length < 2 ) continue;
 				if ( opt.needsPowerOfTwo && ! ( isPowerOfTwo( width ) && isPowerOfTwo( height ) ) ) continue;
 				transcoderFormat = opt.transcoderFormat[ hasAlpha ? 1 : 0 ];
 				engineFormat = opt.engineFormat[ hasAlpha ? 1 : 0 ];
@@ -550,7 +568,87 @@
 
 		}
 
+	}; //
+	// THREE.DataTexture and THREE.Data3DTexture parsing.
+
+
+	const FORMAT_MAP = {
+		[ VK_FORMAT_R32G32B32A32_SFLOAT ]: THREE.RGBAFormat,
+		[ VK_FORMAT_R16G16B16A16_SFLOAT ]: THREE.RGBAFormat,
+		[ VK_FORMAT_R8G8B8A8_UNORM ]: THREE.RGBAFormat,
+		[ VK_FORMAT_R8G8B8A8_SRGB ]: THREE.RGBAFormat,
+		[ VK_FORMAT_R32G32_SFLOAT ]: THREE.RGFormat,
+		[ VK_FORMAT_R16G16_SFLOAT ]: THREE.RGFormat,
+		[ VK_FORMAT_R8G8_UNORM ]: THREE.RGFormat,
+		[ VK_FORMAT_R8G8_SRGB ]: THREE.RGFormat,
+		[ VK_FORMAT_R32_SFLOAT ]: THREE.RedFormat,
+		[ VK_FORMAT_R16_SFLOAT ]: THREE.RedFormat,
+		[ VK_FORMAT_R8_SRGB ]: THREE.RedFormat,
+		[ VK_FORMAT_R8_UNORM ]: THREE.RedFormat
 	};
+	const TYPE_MAP = {
+		[ VK_FORMAT_R32G32B32A32_SFLOAT ]: THREE.FloatType,
+		[ VK_FORMAT_R16G16B16A16_SFLOAT ]: THREE.HalfFloatType,
+		[ VK_FORMAT_R8G8B8A8_UNORM ]: THREE.UnsignedByteType,
+		[ VK_FORMAT_R8G8B8A8_SRGB ]: THREE.UnsignedByteType,
+		[ VK_FORMAT_R32G32_SFLOAT ]: THREE.FloatType,
+		[ VK_FORMAT_R16G16_SFLOAT ]: THREE.HalfFloatType,
+		[ VK_FORMAT_R8G8_UNORM ]: THREE.UnsignedByteType,
+		[ VK_FORMAT_R8G8_SRGB ]: THREE.UnsignedByteType,
+		[ VK_FORMAT_R32_SFLOAT ]: THREE.FloatType,
+		[ VK_FORMAT_R16_SFLOAT ]: THREE.HalfFloatType,
+		[ VK_FORMAT_R8_SRGB ]: THREE.UnsignedByteType,
+		[ VK_FORMAT_R8_UNORM ]: THREE.UnsignedByteType
+	};
+	const ENCODING_MAP = {
+		[ VK_FORMAT_R8G8B8A8_SRGB ]: THREE.sRGBEncoding,
+		[ VK_FORMAT_R8G8_SRGB ]: THREE.sRGBEncoding,
+		[ VK_FORMAT_R8_SRGB ]: THREE.sRGBEncoding
+	};
+
+	function createDataTexture( container ) {
+
+		const {
+			vkFormat,
+			pixelWidth,
+			pixelHeight,
+			pixelDepth
+		} = container;
+
+		if ( FORMAT_MAP[ vkFormat ] === undefined ) {
+
+			throw new Error( 'THREE.KTX2Loader: Unsupported vkFormat.' );
+
+		} //
+
+
+		let view;
+		const levelData = container.levels[ 0 ].levelData;
+
+		if ( TYPE_MAP[ vkFormat ] === THREE.FloatType ) {
+
+			view = new Float32Array( levelData.buffer, levelData.byteOffset, levelData.byteLength / Float32Array.BYTES_PER_ELEMENT );
+
+		} else if ( TYPE_MAP[ vkFormat ] === THREE.HalfFloatType ) {
+
+			view = new Uint16Array( levelData.buffer, levelData.byteOffset, levelData.byteLength / Uint16Array.BYTES_PER_ELEMENT );
+
+		} else {
+
+			view = levelData;
+
+		} //
+
+
+		const texture = pixelDepth === 0 ? new THREE.DataTexture( view, pixelWidth, pixelHeight ) : new THREE.Data3DTexture( view, pixelWidth, pixelHeight, pixelDepth );
+		texture.type = TYPE_MAP[ vkFormat ];
+		texture.format = FORMAT_MAP[ vkFormat ];
+		texture.encoding = ENCODING_MAP[ vkFormat ] || THREE.LinearEncoding;
+		texture.needsUpdate = true; //
+
+		return Promise.resolve( texture );
+
+	}
 
 	THREE.KTX2Loader = KTX2Loader;
 

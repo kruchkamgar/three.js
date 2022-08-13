@@ -40,6 +40,7 @@
 
 			}
 
+			this.isTransformControls = true;
 			this.visible = false;
 			this.domElement = domElement;
 			this.domElement.style.touchAction = 'none'; // disable touch scroll
@@ -180,7 +181,17 @@
 
 			this.camera.updateMatrixWorld();
 			this.camera.matrixWorld.decompose( this.cameraPosition, this.cameraQuaternion, this._cameraScale );
-			this.eye.copy( this.cameraPosition ).sub( this.worldPosition ).normalize();
+
+			if ( this.camera.isOrthographicCamera ) {
+
+				this.camera.getWorldDirection( this.eye );
+
+			} else {
+
+				this.eye.copy( this.cameraPosition ).sub( this.worldPosition ).normalize();
+
+			}
+
 			super.updateMatrixWorld( this );
 
 		}
@@ -532,6 +543,23 @@
 
 		}
 
+		reset() {
+
+			if ( ! this.enabled ) return;
+
+			if ( this.dragging ) {
+
+				this.object.position.copy( this._positionStart );
+				this.object.quaternion.copy( this._quaternionStart );
+				this.object.scale.copy( this._scaleStart );
+				this.dispatchEvent( _changeEvent );
+				this.dispatchEvent( _objectChangeEvent );
+				this.pointStart.copy( this.pointEnd );
+
+			}
+
+		}
+
 		getRaycaster() {
 
 			return _raycaster;
@@ -587,9 +615,8 @@
 
 		}
 
-	}
+	} // mouse / touch event handlers
 
-	TransformControls.prototype.isTransformControls = true; // mouse / touch event handlers
 
 	function getPointer( event ) {
 
@@ -632,7 +659,13 @@
 	function onPointerDown( event ) {
 
 		if ( ! this.enabled ) return;
-		this.domElement.setPointerCapture( event.pointerId );
+
+		if ( ! document.pointerLockElement ) {
+
+			this.domElement.setPointerCapture( event.pointerId );
+
+		}
+
 		this.domElement.addEventListener( 'pointermove', this._onPointerMove );
 		this.pointerHover( this._getPointer( event ) );
 		this.pointerDown( this._getPointer( event ) );
@@ -708,6 +741,7 @@
 		constructor() {
 
 			super();
+			this.isTransformControlsGizmo = true;
 			this.type = 'TransformControlsGizmo'; // shared materials
 
 			const gizmoMaterial = new THREE.MeshBasicMaterial( {
@@ -1236,9 +1270,8 @@
 
 		}
 
-	}
+	} //
 
-	TransformControlsGizmo.prototype.isTransformControlsGizmo = true; //
 
 	class TransformControlsPlane extends THREE.Mesh {
 
@@ -1252,6 +1285,7 @@
 				opacity: 0.1,
 				toneMapped: false
 			} ) );
+			this.isTransformControlsPlane = true;
 			this.type = 'TransformControlsPlane';
 
 		}
@@ -1350,8 +1384,6 @@
 		}
 
 	}
-
-	TransformControlsPlane.prototype.isTransformControlsPlane = true;
 
 	THREE.TransformControls = TransformControls;
 	THREE.TransformControlsGizmo = TransformControlsGizmo;
